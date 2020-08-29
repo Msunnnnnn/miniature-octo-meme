@@ -1,0 +1,255 @@
+1、用shell脚本批量建立Linux用户
+实现要求：创建用户student1到student50,指定组为student组！而且每个用户需要设定一个不同的密码！
+
+脚本实现如下：
+
+ 
+
+#!/bin/bash
+for i in `seq 1 50`
+do
+    useradd -G student student$i ; 
+    echo student$i | passwd student$i --stdin;
+done
+
+【说明：Linux下 Passwd有参数　　--stdin　　This option is used to indicate that passwd should read the new password from standard input, which can be a pipe.　　所以linux下自动改变用户密码的办法就是:　　Echo 密码 |passwd –stdin 用户名】-------------------设置相同的密码------------------------
+
+#!/bin/bash
+password="123456"
+for USER in user1 user2 user3
+do
+     useradd -m $USER
+     echo -e "${password}\n${password}" | passwd $USER
+done
+
+ 【说明：
+     echo -n 不换行输出：
+$echo -n "123"
+$echo "456"
+最终输出 123456
+而不是
+123
+456
+    echo -e 处理特殊字符：
+        \n 换行且光标移至行首 】 
+ok,就这么一个简单的脚本，就可以再系统里批量生成账号了。而且密码跟账号的名字一样。
+这就是for do done语句用法。
+
+2、 编写shell脚本，将/usr/local/test目录下大于100k的文件转移到/tmp目录下：
+
+#!/bin/bash
+for FILE in `ls /usr/local/test`
+do
+    if [ -f $FILE ] ; then
+        if [ `ls -l  $FILE | awk `{print $5}` -gt 100000 ] ; then
+            mv $FILE  /tmp/
+        fi
+    fi
+done
+
+================
+
+#!/bin/bash
+for FileName in `ls -l  /usr/local/test | awk '$5>102400' {print $9}`
+do
+        mv $FileName  /tmp/
+done
+ls -al  /tmp/
+echo  "done!"
+
+
+3、通过apache访问日志access.log 统计IP和每个地址访问的次数，按访问量列出前10名。
+     日志格式样例如下：
+     192.168.1.247  ---【02/jul/2010:23:44:59 + 8080 】 "GET /HTTP/1/1"   200 19
+     答案：
+         cat  access.log | awk '{print  $1}' |sort| uniq -c |sort -rn |head -10
+ （uniq 参数说明：– c 显示输出中，在每行行首加上本行在文件中连续出现的次数。
+     sort参数说明：sort默认的排序方式是升序，-r 参数就会改变成倒叙；你有没有遇到过10比2小的情况。我反正遇到过。出现这种情况是由于排序程序将这些数字按字符来排序了，排序程序会先比较1和2，显然1小，所以就将10放在2前面喽。这也是sort的一贯作风。）
+
+4、一台监控主机，一台被监控主机。被监控主机分区使用率大于80%，就发告警邮件。放到crontab里面，每10分钟执行一次。
+        a、 首先两台机器要建立服务器间的信任关系。
+        b、脚本：        
+
+ 
+
+#！/bin/bash
+FSMAX="80"
+remote_user='root'
+remote_ip=(IP地址列表)
+ ip_num='0'
+while [ "$ip_num" -le "$(expr ${#remote_ip[@]} -l)"]
+do
+  read_num='1'
+  ssh "$remote_user"@"${remote_ip[$ip_num]}"  df -h > /tmp/diskcheck_tmp
+  grep '^/dev/*'  /tmp/diskcheck_tmp | awk '{print $5}'|sed 's/\%//g'  > /tmp/diskcheck_num_tmp
+    while [ "$read_num" -le $(wc -l < /tmp/diskcheck_num_tmp) ]
+      do
+	 size=$(sed -n "$read_num" 'p'  /tmp/diskcheck_num_tmp)
+	 if [ "size" -gt "$FSMAX" ]
+	   then
+	     $(grep '^/dev/*'  /tmp/diskcheck_tmp |sed -n $read_num'p'  > /tmp/disk_check_mail)
+	     $(echo ${remote_ip[$ip_num]}) >> /tmp/disk_check_mail)
+	     $(mail  -s "diskcheck_alert"  admin  <  /tmp/disk_check_mail)
+	 fi
+	 read_num=$(expr  $read_num + 1)
+	 done
+  ip_num=$(expr  $ip_num + 1)
+done
+
+===================写入crontab=====================
+0/10 * * * *   /home/diskcheck.sh   2&>1
+
+
+5、监控主机的磁盘空间,当使用空间超过90％就通过发mail来发警告
+
+#!/bin/bash
+#monitor available disk space
+#提取本服务器的IP地址信息  
+IP=`ifconfig eth0 | grep "inet addr" | cut -f 2 -d ":" | cut -f 1 -d " "`    
+SPACE=` df -hP | awk '{print int($5)}'`
+if [ $SPACE -ge 90 ]
+then
+  echo "$IP 服务器 磁盘空间 使用率已经超过90%，请及时处理。"|mail -s "$IP 服务器硬盘告警"   fty89@163.com
+fi
+
+
+6、自动ftp上传     
+   
+
+#! /bin/bash
+    ftp -n << END_FTP
+    open 192.168.1.22
+    user  test testing      //用户名test  密码：testing
+    binary
+    prompt  off    //关闭提示
+    mput   files     //上传files文件
+    close
+    bye
+    END_FTP
+
+
+7、编写shell脚本，获取本机的网络地址。比如：本机的ip地址是：
+192.168.100.5/255.255.255.0,
+那么他的网络地址是：
+192.168.100.1/255.255.255.0
+方法一：
+
+#！/bin/bash
+IP=ifconfig eth0|grep 'inet addr'|sed 's/^.*addr://g'|awk  '{print $1}'
+ NETMASK=ifconfig eth0 |grep "inet addr"|sed 's/^.*Mask://g'
+echo "$IP/&NETMASK"
+exit
+
+方法二：
+
+#!/bin/bash
+ #This script print ip and network
+ file="/etc/sysconfig/network-scripts/ifcfg-eth0"
+ if [ -f $file ] ;then
+     IP=`grep "IPADDR" $file|awk -F"=" '{ print $2 }'`
+     MASK=`grep "NETMASK" $file|awk -F"=" '{ print $2 }'`
+ echo "$IP/$MASK"
+ exit 1
+ fi
+
+IP地址也可这样获取：IP=`ifconfig eth0 | grep "inet addr" | cut -f 2 -d ":" | cut -f 1 -d " "
+子网掩码：NETMASK= `ifconfig eth0 | grep "inet addr"|cut -f 4 -d ":"
+
+ 8、某系统管理员需要每天做一定的重复工作，编制一个解决方案：
+(1).从下午4：50 删除/abc 目录下的全部子目录和全部文件；
+(2).从早上8：00～下午6：00 每小时读取/xyz 目录下x1 文件中每行第一个域的全部数
+据加入到/backup 目录下的back01.txt 文件内；
+(3).每逢周一下午5：50 将/data 目录下的所有目录和文件归档并压缩为文件
+backup.tar.gz;
+(4).在下午5：55 将IDE 接口的CD－ROM 缷载（假设CD－ROM 的设备名为hdc）;
+(5).在早上8：00 前开机后启动。
+（a）用vi创建编辑一个名为prgx的crontab文件；
+（b）prgx文件的内容：
+            50 16 * * * rm -r /abc/*
+            0 8-18/1 * * * cut -f1 /xyz/x1 >>  /backup/bak01.txt
+            50 17 * * * tar zcvf backup.tar.gz /data
+            55 17 * * * umount /dev/hdc
+（c）由超级用户登录，用crontab执行 prgx文件中的内容：
+            root@xxx:#crontab prgx；在每日早晨8:00之前开机后即可自动启动crontab
+
+9．设计一个shell程序，添加一个新组为class1，然后添加属于这个组的30个用户，用户名的形式为stdxx，其中xx从01到30 
+
+#!/bin/sh 
+i=1 
+groupadd class1 
+while [ $i -le 30 ] 
+do 
+if [ $i -le 9 ] ;then 
+USERNAME=stu0${i} 
+else
+USERNAME=stu${i} 
+fi 
+useradd $USERNAME 
+mkdir /home/$USERNAME 
+chown -R $USERNAME /home/$USERNAME 
+chgrp -R class1 /home/$USERNAME 
+i=$(($i+1)) 
+done
+
+
+10．编写shell程序，实现自动删除50个账号的功能。账号名为stud1至stud50。 
+
+#!/bin/sh 
+i=1 
+while [ $i -le 50 ] 
+do 
+userdel -r stud${i} 
+i=$(($i+1 )) 
+done 
+
+ 
+
+11．设计一个shell程序，在每月第一天备份并压缩/etc目录的所有内容，存放在/root/bak目录里，且文件名为如下形式yymmdd_etc，yy为年，mm为月，dd为日。Shell程序fileback存放在/usr/bin目录下。 
+
+（1）编写shell程序fileback： 
+
+#!/bin/sh 
+DIRNAME=`ls /root | grep bak` 
+if [ -z "$DIRNAME" ] ; then 
+mkdir /root/bak 
+cd /root/bak 
+fi
+BACKETC=$(date +%Y%m%d)_etc.tar.gz 
+tar zcvf  $BACKETC  /etc 
+echo "fileback finished!" 
+
+（2）编写任务定时器： 
+echo "0 0 1 * * /bin/sh /usr/bin/fileback" >; /root/etcbakcron 
+crontab /root/etcbakcron 
+或使用crontab -e 命令添加定时任务： 
+0 1 * * * /bin/sh /usr/bin/fileback 
+
+ 
+
+12．有一普通用户想在每周日凌晨零点零分定期备份/user/backup到/tmp目录下，该用户应如何做？ 
+
+（1）第一种方法： 
+用户应使用crontab –e 命令创建crontab文件。格式如下： 
+0 0 * * sun cp –r /user/backup /tmp 
+（2）第二种方法： 
+用户先在自己目录下新建文件file，文件内容如下： 
+0 * * sun cp –r /user/backup /tmp 
+然后执行 crontab file 使生效。 
+13．设计一个Shell程序，在/userdata目录下建立50个目录，即user1～user50，并设置每个目录的权限，其中其他用户的权限为：读；文件所有者的权限为：读、写、执行；文件所有者所在组的权限为：读、执行。 
+建立程序 Pro16如下： 
+
+#!/bin/sh 
+i=1 
+while [ i -le 50 ] 
+  do 
+  if [ -d /userdata ];then 
+    mkdir -p -m 754 /userdata/user$i   加上-m 754 就不用写下面那一句了  -p 是递归建立目录 
+    #chmod 754 /userdata/user$i 
+    echo "user$i" 
+    let "i = i + 1" （或i=$(($i+1)) 
+  else 
+    mkdir /userdata 
+    mkdir -p -m /userdata/user$i 
+#chmod 754 /userdata/user$i 
+    echo "user$i" 
+    let "i = i + 1" （或i=$（（$i＋1））
